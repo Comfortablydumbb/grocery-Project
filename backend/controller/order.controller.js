@@ -65,26 +65,29 @@ exports.getOrders = async (req, res) => {
     const userId = new mongoose.Types.ObjectId(req.user._id);
     console.log("🟢 Fetching orders for user:", userId);
 
-    // Try fetching orders again
+    // Try fetching orders with proper population
     const orders = await Order.find({ userId: userId })
       .populate({
         path: "orderItems",
-        populate: { path: "productId", select: "productName price images" },
+        populate: { 
+          path: "productId", 
+          select: "productName price images"
+        }
       })
       .sort({ createdAt: -1 });
 
-    if (!orders.length) {
-      console.log("⚠️ No orders found for user:", userId);
-      return res.status(404).json({ message: "No orders found" });
-    }
-
+    // Return empty array instead of 404 when no orders found
     console.log("✅ Orders retrieved:", orders.length);
-    return res.status(200).json({ success: true, orders });
+    return res.status(200).json({ 
+      success: true, 
+      orders: orders || [] 
+    });
+
   } catch (error) {
     console.error("❌ Get Orders Error:", error);
     return res.status(500).json({
       error: "Failed to retrieve orders",
-      details: error.message,
+      details: error.message
     });
   }
 };

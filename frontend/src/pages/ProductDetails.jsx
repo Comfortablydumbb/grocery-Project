@@ -19,6 +19,10 @@ const ProductDetails = () => {
       try {
         const response = await axiosPrivate.get(`/v1/product/${id}`);
         setProduct(response.data.product);
+        // Reset quantity if it's more than available stock
+        if (response.data.product.remainingUnits < quantity) {
+          setQuantity(Math.min(1, response.data.product.remainingUnits));
+        }
       } catch (error) {
         console.error("Error fetching product:", error);
         toast.error("Failed to load product details");
@@ -28,19 +32,38 @@ const ProductDetails = () => {
     };
 
     fetchProduct();
-  }, [id, axiosPrivate]);
+  }, [id, axiosPrivate, quantity]);
 
   const handleAddToCart = async () => {
     try {
-      await axiosPrivate.post("/v1/cart/add", {
+      if (!product.remainingUnits) {
+        toast.error("This product is out of stock");
+        return;
+      }
+
+      if (quantity > product.remainingUnits) {
+        toast.error(`Only ${product.remainingUnits} units available`);
+        return;
+      }
+
+      const response = await axiosPrivate.post("/v1/cart/add", {
         productId: id,
         quantity: quantity,
       });
+
+      if (response.data.availableStock !== undefined) {
+        // Update product's remaining units in state
+        setProduct(prev => ({
+          ...prev,
+          remainingUnits: response.data.availableStock
+        }));
+      }
+
       toast.success("Added to cart successfully");
       window.dispatchEvent(new Event("cartUpdated"));
     } catch (error) {
       console.error("Error adding to cart:", error);
-      toast.error("Failed to add to cart");
+      toast.error(error.response?.data?.message || "Failed to add to cart");
     }
   };
 
@@ -157,6 +180,18 @@ const ProductDetails = () => {
             )}
 
             <div className="space-y-4">
+              {/* Stock Status */}
+              <div className="flex items-center space-x-2">
+                <span className="text-gray-700">Stock Status:</span>
+                {product.remainingUnits > 0 ? (
+                  <span className="text-green-600 font-medium">
+                    {product.remainingUnits} units available
+                  </span>
+                ) : (
+                  <span className="text-red-600 font-medium">Out of Stock</span>
+                )}
+              </div>
+
               <div className="flex items-center space-x-4">
                 <label htmlFor="quantity" className="text-gray-700">
                   Quantity:
@@ -166,10 +201,11 @@ const ProductDetails = () => {
                   value={quantity}
                   onChange={(e) => setQuantity(Number(e.target.value))}
                   className="border border-gray-300 rounded-md px-3 py-2"
+                  disabled={!product.remainingUnits}
                 >
-                  {[1, 2, 3, 4, 5].map((num) => (
-                    <option key={num} value={num}>
-                      {num}
+                  {[...Array(Math.min(5, product.remainingUnits || 0))].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {i + 1}
                     </option>
                   ))}
                 </select>
@@ -177,10 +213,11 @@ const ProductDetails = () => {
 
               <button
                 onClick={handleAddToCart}
-                className="w-full flex items-center justify-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition"
+                disabled={!product.remainingUnits}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ShoppingCart size={20} />
-                Add to Cart
+                {product.remainingUnits ? "Add to Cart" : "Out of Stock"}
               </button>
             </div>
           </motion.div>

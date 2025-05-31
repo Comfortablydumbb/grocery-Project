@@ -15,6 +15,9 @@ const UpdateProduct = () => {
   const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
+  const [totalUnits, setTotalUnits] = useState("");
+  const [remainingUnits, setRemainingUnits] = useState("");
+  const [soldUnits, setSoldUnits] = useState("");
   const [images, setImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
@@ -38,16 +41,17 @@ const UpdateProduct = () => {
     const fetchProduct = async () => {
       try {
         const res = await axiosPrivate.get(`${GET_PRODUCT_URL}/${id}`);
-
         const data = res.data.product;
 
-        console.log(res.data.product);
         setProductName(data.productName);
         setUnit(data.unit);
         setDescription(data.description);
         setCategory(data.category);
-        setPrice(data.oldPrice);
+        setPrice(data.oldPrice || data.price);
         setDiscount(data.discount);
+        setTotalUnits(data.totalUnits);
+        setRemainingUnits(data.remainingUnits);
+        setSoldUnits(data.soldUnits);
         setExistingImages(data.images || []);
       } catch (err) {
         toast.error("Failed to load product");
@@ -74,10 +78,33 @@ const UpdateProduct = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!productName || !category || !price) {
+    if (!productName || !category || !price || !totalUnits || !unit) {
       toast.error("Please fill all required fields");
       return;
     }
+
+    if (isNaN(totalUnits) || totalUnits < 0) {
+      toast.error("Total units must be a positive number");
+      return;
+    }
+
+    if (totalUnits < soldUnits) {
+      toast.error("Total units cannot be less than sold units");
+      return;
+    }
+
+    if (isNaN(price) || price <= 0) {
+      toast.error("Price must be greater than zero");
+      return;
+    }
+
+    if (discount && (isNaN(discount) || discount < 0 || discount > 100)) {
+      toast.error("Discount must be between 0 and 100");
+      return;
+    }
+
+    // Calculate new remaining units
+    const newRemainingUnits = parseInt(totalUnits) - parseInt(soldUnits);
 
     const formData = new FormData();
     formData.append("productName", productName);
@@ -86,19 +113,32 @@ const UpdateProduct = () => {
     formData.append("category", category);
     formData.append("price", price);
     formData.append("discount", discount);
+    formData.append("totalUnits", parseInt(totalUnits));
     images.forEach((file) => formData.append("images", file));
 
     try {
       setIsLoading(true);
       await axiosPrivate.put(`${UPDATE_PRODUCT_URL}/${id}`, formData);
       toast.success("Product updated successfully!");
+      
+      // Update local state to reflect new remaining units
+      setRemainingUnits(newRemainingUnits);
+      
       navigate("/admin/products");
     } catch (err) {
-      toast.error("Failed to update product");
+      toast.error(err.response?.data?.message || "Failed to update product");
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Add effect to update remaining units when total units or sold units change
+  useEffect(() => {
+    if (totalUnits && soldUnits) {
+      const remaining = parseInt(totalUnits) - parseInt(soldUnits);
+      setRemainingUnits(remaining >= 0 ? remaining : 0);
+    }
+  }, [totalUnits, soldUnits]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-yellow-50 flex items-center justify-center py-12 px-4">
@@ -168,7 +208,7 @@ const UpdateProduct = () => {
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Price *
@@ -191,6 +231,46 @@ const UpdateProduct = () => {
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:outline-none text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Total Units *
+              </label>
+              <input
+                type="number"
+                value={totalUnits}
+                onChange={(e) => setTotalUnits(e.target.value)}
+                required
+                min={soldUnits}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Remaining Units
+              </label>
+              <input
+                type="number"
+                value={remainingUnits}
+                disabled
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sold Units
+              </label>
+              <input
+                type="number"
+                value={soldUnits}
+                disabled
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-sm"
               />
             </div>
           </div>

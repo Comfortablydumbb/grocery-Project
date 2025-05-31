@@ -136,11 +136,19 @@ exports.getCart = async (req, res) => {
 };
 
 exports.placeOrderFromCart = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     console.log("🛒 Placing order from cart...");
 
     const userId = req.user._id;
     const { selectedProducts, address, phoneNumber, paymentMethod } = req.body;
+
+    // Validate required fields
+    if (!address || !phoneNumber || !paymentMethod) {
+      return res.status(400).json({ error: "Missing required fields: address, phoneNumber, or paymentMethod" });
+    }
 
     if (!Array.isArray(selectedProducts) || selectedProducts.length === 0) {
       return res.status(400).json({ error: "No products selected for order" });
@@ -155,14 +163,35 @@ exports.placeOrderFromCart = async (req, res) => {
     let orderItems = [];
     let totalAmount = 0;
 
+    // Validate products, check stock and update inventory
     for (let item of selectedProducts) {
       const { productId, quantity } = item;
-      const product = await Product.findById(productId);
+      const product = await Product.findById(productId).session(session);
+      
       if (!product) {
-        return res
-          .status(400)
-          .json({ error: `Product with ID ${productId} not found` });
+        await session.abortTransaction();
+        return res.status(400).json({ error: `Product with ID ${productId} not found` });
       }
+
+      // Check if enough stock is available
+      if (product.remainingUnits < quantity) {
+        await session.abortTransaction();
+        return res.status(400).json({ 
+          error: `Insufficient stock for product ${product.productName}. Available: ${product.remainingUnits}`
+        });
+      }
+
+      // Update product inventory
+      await Product.findByIdAndUpdate(
+        productId,
+        {
+          $inc: {
+            remainingUnits: -quantity,
+            soldUnits: quantity
+          }
+        },
+        { session }
+      );
 
       const orderItem = new OrderItem({
         orderId: null,
@@ -172,9 +201,15 @@ exports.placeOrderFromCart = async (req, res) => {
         totalPrice: quantity * product.price,
       });
 
-      await orderItem.save();
+      await orderItem.save({ session });
       orderItems.push(orderItem._id);
       totalAmount += orderItem.totalPrice;
+    }
+
+    // Validate payment method
+    if (!["Cash", "QR"].includes(paymentMethod)) {
+      await session.abortTransaction();
+      return res.status(400).json({ error: "Invalid payment method. Must be 'Cash' or 'QR'" });
     }
 
     const order = new Order({
@@ -184,25 +219,33 @@ exports.placeOrderFromCart = async (req, res) => {
       address,
       phoneNumber,
       paymentMethod: paymentMethod,
-      status: paymentMethod === "cash" ? "Processing" : "Pending",
-      paymentStatus: paymentMethod === "cash" ? "Pending" : "Paid",
+      status: "Pending",
+      paymentStatus: paymentMethod === "Cash" ? "Pending" : "Paid",
     });
 
-    await order.save();
+    await order.save({ session });
 
+    // Update orderItems with the order ID
     await OrderItem.updateMany(
       { _id: { $in: orderItems } },
-      { orderId: order._id }
+      { orderId: order._id },
+      { session }
     );
 
+    // Remove ordered items from cart
     const orderedProductIds = selectedProducts.map((p) => p.productId);
-    await CartItem.deleteMany({
-      cartId: cart._id,
-      productId: { $in: orderedProductIds },
-    });
+    await CartItem.deleteMany(
+      {
+        cartId: cart._id,
+        productId: { $in: orderedProductIds },
+      },
+      { session }
+    );
+
+    await session.commitTransaction();
 
     // Response based on payment method
-    if (paymentMethod === "cash") {
+    if (paymentMethod === "Cash") {
       return res.json({
         message: "Order placed successfully. Pay in cash upon delivery.",
         orderId: order._id,
@@ -213,15 +256,14 @@ exports.placeOrderFromCart = async (req, res) => {
         message: "Order placed successfully. Awaiting QR payment confirmation.",
         orderId: order._id,
         totalAmount,
-        instructions: `Please scan the QR code and send the payment of NPR ${totalAmount.toFixed(
-          2
-        )}. Add your email in the remarks for confirmation.`,
+        instructions: `Please scan the QR code and send the payment of NPR ${totalAmount.toFixed(2)}. Add your email in the remarks for confirmation.`,
       });
     }
   } catch (error) {
+    await session.abortTransaction();
     console.error("❌ Order Placement Error:", error);
-    return res
-      .status(500)
-      .json({ error: "Order placement failed, please try again" });
+    return res.status(500).json({ error: "Order placement failed, please try again" });
+  } finally {
+    session.endSession();
   }
 };

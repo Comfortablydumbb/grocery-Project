@@ -14,6 +14,7 @@ const CreateProduct = () => {
   const [category, setCategory] = useState("");
   const [price, setPrice] = useState("");
   const [discount, setDiscount] = useState("");
+  const [totalUnits, setTotalUnits] = useState("");
   const [images, setImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -51,8 +52,23 @@ const CreateProduct = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!productName || !category || !price || images.length === 0) {
+    if (!productName || !category || !price || !totalUnits || !unit || images.length === 0) {
       toast.error("Please fill all required fields");
+      return;
+    }
+
+    if (isNaN(totalUnits) || totalUnits < 0) {
+      toast.error("Total units must be a positive number");
+      return;
+    }
+
+    if (isNaN(price) || price <= 0) {
+      toast.error("Price must be greater than zero");
+      return;
+    }
+
+    if (discount && (isNaN(discount) || discount < 0 || discount > 100)) {
+      toast.error("Discount must be between 0 and 100");
       return;
     }
 
@@ -63,23 +79,16 @@ const CreateProduct = () => {
     formData.append("category", category);
     formData.append("price", price);
     formData.append("discount", discount);
+    formData.append("totalUnits", parseInt(totalUnits));
     images.forEach((file) => formData.append("images", file));
 
     try {
       setIsLoading(true);
       await axiosPrivate.post(CREATE_PRODUCT_URL, formData);
       toast.success("Product created successfully!");
-
-      setProductName("");
-      setUnit("");
-      setDescription("");
-      setCategory("");
-      setPrice("");
-      setDiscount("");
-      setExistingImages([]);
-      //   navigate("/admin/products");
+      navigate("/admin/products");
     } catch (err) {
-      toast.error("Failed to create product");
+      toast.error(err.response?.data?.message || "Failed to create product");
     } finally {
       setIsLoading(false);
     }
@@ -153,7 +162,7 @@ const CreateProduct = () => {
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Price *
@@ -175,6 +184,20 @@ const CreateProduct = () => {
                 type="number"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:outline-none text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Total Units *
+              </label>
+              <input
+                type="number"
+                value={totalUnits}
+                onChange={(e) => setTotalUnits(e.target.value)}
+                required
+                min="0"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-400 focus:outline-none text-sm"
               />
             </div>

@@ -2,25 +2,35 @@ import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { Package, Calendar, DollarSign } from "lucide-react";
 import useAxiosPrivate from "../hooks/useAxiosPrivate";
+import toast from "react-hot-toast";
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const location = useLocation();
-
   const axiosPrivate = useAxiosPrivate();
 
   useEffect(() => {
     const fetchOrders = async () => {
       try {
+        setLoading(true);
+        setError(null);
         const res = await axiosPrivate.get("/v1/orders/myorders");
-        setOrders(
-          (res.data.orders || []).sort(
-            (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-          )
-        );
+        
+        if (res.data.success) {
+          setOrders(
+            (res.data.orders || []).sort(
+              (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+            )
+          );
+        } else {
+          setOrders([]);
+        }
       } catch (err) {
         console.error("Failed to fetch orders:", err);
+        setError("Failed to load orders. Please try again later.");
+        toast.error("Failed to load orders");
       } finally {
         setLoading(false);
       }
@@ -36,10 +46,16 @@ const Orders = () => {
       day: "numeric",
     });
 
-  const calculateOrderTotal = (items) =>
-    items
-      .reduce((total, item) => total + item.productId.price * item.quantity, 0)
+  const calculateOrderTotal = (items) => {
+    if (!items || !Array.isArray(items)) return "0.00";
+    return items
+      .reduce((total, item) => {
+        const price = item.productId?.price || 0;
+        const quantity = item.quantity || 0;
+        return total + (price * quantity);
+      }, 0)
       .toFixed(2);
+  };
 
   const getStatusClass = (status) => {
     switch (status) {
@@ -58,13 +74,27 @@ const Orders = () => {
     }
   };
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-20 lg:pt-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="text-center py-12 bg-white rounded-lg shadow-md">
+            <p className="text-xl text-red-600">{error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-20 lg:pt-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">My Orders</h1>
 
         {loading ? (
-          <p className="text-center text-gray-500">Loading orders...</p>
+          <div className="text-center py-12 bg-white rounded-lg shadow-md">
+            <p className="text-xl text-gray-600">Loading orders...</p>
+          </div>
         ) : orders.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg shadow-md">
             <Package className="mx-auto h-16 w-16 text-gray-400 mb-4" />
@@ -101,30 +131,32 @@ const Orders = () => {
                   {/* Order Items */}
                   <div className="md:col-span-2">
                     <h3 className="text-lg font-semibold mb-2">Items</h3>
-                    {order.orderItems.map((item, idx) => (
+                    {order.orderItems?.map((item, idx) => (
                       <div
                         key={idx}
                         className="flex justify-between items-center mb-2 border-b pb-2 last:border-b-0"
                       >
                         <div className="flex items-center">
                           <img
-                          
-                            src={`http://localhost:3001/public/${item.productId.images?.[0]}` || "/placeholder.jpg"}
-                            alt={item.productId.productName}
+                            src={item.productId?.images?.[0] ? 
+                              `http://localhost:3001/public/${item.productId.images[0]}` : 
+                              "/placeholder.jpg"
+                            }
+                            alt={item.productId?.productName || "Product"}
                             className="w-16 h-16 object-cover rounded-md mr-4"
                           />
                           <div>
                             <p className="font-medium text-gray-900">
-                              {item.productId.productName}
+                              {item.productId?.productName || "Unknown Product"}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Quantity: {item.quantity}
+                              Quantity: {item.quantity || 0}
                             </p>
                           </div>
                         </div>
                         <p className="font-semibold text-gray-900">
                           Rs.{" "}
-                          {(item.productId.price * item.quantity).toFixed(2)}
+                          {((item.productId?.price || 0) * (item.quantity || 0)).toFixed(2)}
                         </p>
                       </div>
                     ))}

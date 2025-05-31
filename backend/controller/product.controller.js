@@ -12,7 +12,13 @@ exports.createProduct = async (req, res) => {
       images,
       discount,
       unit,
+      totalUnits
     } = req.body;
+
+    // Validate total units
+    if (!totalUnits || totalUnits < 0) {
+      return res.status(400).json({ message: "Total units must be a positive number" });
+    }
 
     // Check if category exists
     const foundCategory = await Category.findById(category);
@@ -39,6 +45,9 @@ exports.createProduct = async (req, res) => {
       price: finalPrice,
       oldPrice: oldPrice,
       unit,
+      totalUnits,
+      remainingUnits: totalUnits, // Initially, remaining units equals total units
+      soldUnits: 0, // Initially, no units are sold
       images,
       discount: discount || 0,
     });
@@ -89,12 +98,26 @@ exports.getProductById = async (req, res) => {
 exports.updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { productName, description, category, price, discount, unit } =
-      req.body;
+    const { 
+      productName, 
+      description, 
+      category, 
+      price, 
+      discount, 
+      unit,
+      totalUnits 
+    } = req.body;
 
     const existingProduct = await Product.findById(id);
     if (!existingProduct) {
       return res.status(404).json({ message: "Product not found" });
+    }
+
+    // Validate total units against sold units
+    if (totalUnits !== undefined && totalUnits < existingProduct.soldUnits) {
+      return res.status(400).json({ 
+        message: "Total units cannot be less than sold units" 
+      });
     }
 
     let imagePaths;
@@ -114,6 +137,13 @@ exports.updateProduct = async (req, res) => {
       finalPrice = price - (price * discount) / 100;
     }
 
+    // Calculate new remaining units if total units is updated
+    let newRemainingUnits = existingProduct.remainingUnits;
+    if (totalUnits !== undefined) {
+      const unitsDifference = totalUnits - existingProduct.totalUnits;
+      newRemainingUnits = existingProduct.remainingUnits + unitsDifference;
+    }
+
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
       {
@@ -124,6 +154,8 @@ exports.updateProduct = async (req, res) => {
         price: finalPrice,
         discount: discount || 0,
         oldPrice: oldPrice,
+        totalUnits: totalUnits || existingProduct.totalUnits,
+        remainingUnits: newRemainingUnits,
         images: imagePaths, // Always set this explicitly
       },
       { new: true }
