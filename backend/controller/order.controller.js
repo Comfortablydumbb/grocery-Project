@@ -11,42 +11,56 @@ exports.cancelOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    // Fetch the order
-    const order = await Order.findById(orderId);
-    if (!order) return res.status(404).json({ error: "Order not found" });
+    // Fetch the order with populated orderItems
+    const order = await Order.findById(orderId).populate({
+      path: 'orderItems',
+      populate: {
+        path: 'productId',
+        select: 'productName remainingUnits soldUnits'
+      }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
 
     // Ensure the order can only be cancelled if it's pending
     if (order.status !== "Pending") {
-      return res
-        .status(400)
-        .json({ error: "Order can only be cancelled if it's pending" });
+      return res.status(400).json({ 
+        error: "Order can only be cancelled if it's pending" 
+      });
     }
 
-    // Restore product stock
-    const orderItems = await OrderItem.find({ orderId });
-    const bulkUpdates = orderItems.map((item) => ({
-      updateOne: {
-        filter: { _id: item.productId },
-        update: {
-          $inc: { totalQuantity: item.quantity, totalSold: -item.quantity },
-        },
-      },
-    }));
+    // Update product quantities
+    for (const item of order.orderItems) {
+      if (!item.productId) continue;
 
-    if (bulkUpdates.length) await Product.bulkWrite(bulkUpdates);
+      await Product.findByIdAndUpdate(
+        item.productId._id,
+        {
+          $inc: {
+            remainingUnits: item.quantity,  // Add back to remaining units
+            soldUnits: -item.quantity       // Subtract from sold units
+          }
+        }
+      );
+    }
 
     // Update order status to "Cancelled"
     order.status = "Cancelled";
     await order.save();
 
-    return res
-      .status(200)
-      .json({ message: "✅ Order cancelled successfully", order });
+    return res.status(200).json({ 
+      message: "Order cancelled successfully",
+      order 
+    });
+
   } catch (error) {
-    console.error("❌ Order Cancellation Error:", error);
-    return res
-      .status(500)
-      .json({ error: "Something went wrong, please try again" });
+    console.error("Order Cancellation Error:", error);
+    return res.status(500).json({ 
+      error: "Failed to cancel order",
+      details: error.message 
+    });
   }
 };
 

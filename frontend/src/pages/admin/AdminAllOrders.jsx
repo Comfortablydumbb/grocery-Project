@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import useAxiosPrivate from "../../hooks/useAxiosPrivate";
 import toast from "react-hot-toast";
+import { Loader2 } from "lucide-react";
 
 const AdminAllOrders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [processingOrderId, setProcessingOrderId] = useState(null);
 
   const axiosPrivate = useAxiosPrivate();
 
@@ -14,6 +16,7 @@ const AdminAllOrders = () => {
       setOrders(res.data.orders);
     } catch (err) {
       console.error("Failed to fetch orders", err);
+      toast.error("Failed to load orders");
     } finally {
       setLoading(false);
     }
@@ -23,35 +26,81 @@ const AdminAllOrders = () => {
     fetchAllOrders();
   }, []);
 
-  const handleStatusChange = async (orderId, newStatus) => {
+  const handleStatusChange = async (orderId, newStatus, currentStatus) => {
+    // Prevent status change for cancelled orders
+    if (currentStatus === "Cancelled") {
+      toast.error("Cannot update a cancelled order");
+      return;
+    }
+
     try {
-      await axiosPrivate.put(`/v1/orders/change-status/${orderId}`, {
+      setProcessingOrderId(orderId);
+      const res = await axiosPrivate.put(`/v1/orders/change-status/${orderId}`, {
         status: newStatus,
       });
-      fetchAllOrders();
-      toast.success(`Order ${orderId} status changed to ${newStatus}`);
+
+      // Update orders list with new status
+      setOrders(prevOrders =>
+        prevOrders.map(order =>
+          order._id === orderId
+            ? { ...order, status: newStatus }
+            : order
+        )
+      );
+
+      toast.success(res.data.message);
     } catch (err) {
       console.error("Failed to update status", err);
-      toast.error(
-        "Failed to change order status. Status of cancelled orders cannot be changed"
-      );
+      const errorMessage = err.response?.data?.error || "Failed to update order status";
+      toast.error(errorMessage);
+      // Refresh orders to ensure correct state
+      fetchAllOrders();
+    } finally {
+      setProcessingOrderId(null);
     }
   };
 
-  const handleCancelOrder = async (orderId) => {
+  const handleCancelOrder = async (orderId, currentStatus) => {
+    // Only allow cancellation of pending orders
+    if (currentStatus !== "Pending") {
+      toast.error("Only pending orders can be cancelled");
+      return;
+    }
+
     try {
-      await axiosPrivate.delete(`/v1/orders/cancel/${orderId}`);
-      fetchAllOrders();
-      toast.success(`Order ${orderId} cancelled successfully`);
+      setProcessingOrderId(orderId);
+      
+      const res = await axiosPrivate.delete(`/v1/orders/cancel/${orderId}`);
+
+      if (res.data.order) {
+        // Update orders list with cancelled status and updated order data
+        setOrders(prevOrders =>
+          prevOrders.map(order =>
+            order._id === orderId
+              ? { ...order, ...res.data.order }
+              : order
+          )
+        );
+        toast.success("Order cancelled successfully");
+      }
     } catch (err) {
       console.error("Failed to cancel order", err);
-      toast.error(
-        "Failed to cancel order. Products in pending status can only be cancelled"
-      );
+      const errorMessage = err.response?.data?.error || "Failed to cancel order";
+      toast.error(errorMessage);
+      // Refresh orders to ensure correct state
+      await fetchAllOrders();
+    } finally {
+      setProcessingOrderId(null);
     }
   };
 
-  if (loading) return <p className="text-center py-20">Loading orders...</p>;
+  if (loading) {
+    return (
+      <div className="py-20 flex justify-center items-center">
+        <Loader2 className="w-8 h-8 animate-spin text-green-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="py-20 max-w-7xl mx-auto px-4">
@@ -80,27 +129,47 @@ const AdminAllOrders = () => {
                   <p className="text-sm text-gray-600">
                     Phone: {order.phoneNumber}
                   </p>
+                  <p className={`text-sm font-medium ${
+                    order.status === 'Cancelled' ? 'text-red-600' :
+                    order.status === 'Delivered' ? 'text-green-600' :
+                    'text-blue-600'
+                  }`}>
+                    Status: {order.status}
+                  </p>
                 </div>
                 <div className="space-x-2">
-                  <select
-                    value={order.status}
-                    onChange={(e) =>
-                      handleStatusChange(order._id, e.target.value)
-                    }
-                    className="border rounded p-1"
-                  >
-                    <option value="Pending">Pending</option>
-                    <option value="Processing">Processing</option>
-                    <option value="Shipped">Shipped</option>
-                    <option value="Delivered">Delivered</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
-                  <button
-                    onClick={() => handleCancelOrder(order._id)}
-                    className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-                  >
-                    Cancel
-                  </button>
+                  {processingOrderId === order._id ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <select
+                        value={order.status}
+                        onChange={(e) =>
+                          handleStatusChange(order._id, e.target.value, order.status)
+                        }
+                        className={`border rounded p-1 ${
+                          order.status === 'Cancelled' 
+                            ? 'opacity-50 cursor-not-allowed' 
+                            : 'cursor-pointer'
+                        }`}
+                        disabled={order.status === 'Cancelled'}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="Processing">Processing</option>
+                        <option value="Shipped">Shipped</option>
+                        <option value="Delivered">Delivered</option>
+                        <option value="Cancelled">Cancelled</option>
+                      </select>
+                      {order.status === 'Pending' && (
+                        <button
+                          onClick={() => handleCancelOrder(order._id, order.status)}
+                          className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 

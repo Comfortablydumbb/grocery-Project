@@ -29,49 +29,53 @@ import AdminAllOrders from "./pages/admin/AdminAllOrders.jsx";
 import CustomerSettings from "./pages/customer/Settings.jsx";
 import AdminSettings from "./pages/admin/Settings.jsx";
 import ProductDetails from "./pages/ProductDetails";
+import { SearchProvider } from "./context/SearchProvider";
+import ScrollToTop from "./component/ScrollToTop";
 
 const App = () => {
   return (
-    <>
-     
-    <Routes>
-      <Route element={<PersistLogin />}>
-        <Route path="/" element={<UserLayout />}>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Home />} />
-          <Route path="/shop" element={<Shop />} />
-          <Route path="/product/:id" element={<ProductDetails />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/verify/:email" element={<VerifyOTP />} />
-          <Route path="/cart" element={<Cart />} />
-          <Route path="/checkout" element={<Checkout />} />
-          <Route path="/orders" element={<Orders />} />
-        </Route>
-        <Route element={<RequireAuth allowedRoles={["Admin"]} />}>
-          <Route path="/admin" element={<AdminDashboard />}>
-            <Route path="dashboard" element={<DashboardHome />} />
-            <Route path="categories" element={<CategoriesPage />} />
-            <Route path="categories/create" element={<CreateCategory />} />
-            <Route path="categories/update/:id" element={<UpdateCategory />} />
-            <Route path="products" element={<ProductsPage />} />
-            <Route path="products/create" element={<CreateProduct />} />
-            <Route path="products/update/:id" element={<UpdateProduct />} />
-            <Route path="users" element={<UsersPage />} />
-            <Route path="allorders" element={<AdminAllOrders />} />
-            <Route path="settings" element={<AdminSettings />} />
+    <SearchProvider>
+      <ScrollToTop />
+      {/* <Toaster /> */}
+      <Routes>
+        <Route element={<PersistLogin />}>
+          <Route path="/" element={<UserLayout />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/shop" element={<Shop />} />
+            <Route path="/product/:id" element={<ProductDetails />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/verify/:email" element={<VerifyOTP />} />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/orders" element={<Orders />} />
+          </Route>
+          <Route element={<RequireAuth allowedRoles={["Admin"]} />}>
+            <Route path="/admin" element={<AdminDashboard />}>
+              <Route path="dashboard" element={<DashboardHome />} />
+              <Route path="categories" element={<CategoriesPage />} />
+              <Route path="categories/create" element={<CreateCategory />} />
+              <Route path="categories/update/:id" element={<UpdateCategory />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="products/create" element={<CreateProduct />} />
+              <Route path="products/update/:id" element={<UpdateProduct />} />
+              <Route path="users" element={<UsersPage />} />
+              <Route path="allorders" element={<AdminAllOrders />} />
+              <Route path="settings" element={<AdminSettings />} />
+            </Route>
+          </Route>
+          <Route element={<RequireAuth allowedRoles={["Customer"]} />}>
+            <Route path="/customer" element={<CustomerDashboard />}>
+              <Route path="dashboard" element={<CustomerDashboardHome />} />
+              <Route path="myorders" element={<MyOrders />} />
+              <Route path="settings" element={<CustomerSettings />} />
+            </Route>
           </Route>
         </Route>
-        <Route element={<RequireAuth allowedRoles={["Customer"]} />}>
-          <Route path="/customer" element={<CustomerDashboard />}>
-            <Route path="dashboard" element={<CustomerDashboardHome />} />
-            <Route path="myorders" element={<MyOrders />} />
-            <Route path="settings" element={<CustomerSettings />} />
-          </Route>
-        </Route>
-      </Route>
-    </Routes>
-    </>
+      </Routes>
+      
+    </SearchProvider>
   );
 };
 

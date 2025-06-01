@@ -1,40 +1,76 @@
-import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { ShoppingCart, Menu, X, User } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ShoppingCart, Menu, X, User, Search } from "lucide-react";
 import useAuth from "../hooks/useAuth";
 import AccountLink from "../component/AccountLink";
 import useAxiosPrivate from "../hooks/useAxiosPrivate";
+import { useSearch } from "../context/SearchProvider";
+import debounce from "lodash/debounce";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [cartCount, setCartCount] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
   const location = useLocation();
+  const navigate = useNavigate();
 
   const { auth } = useAuth();
-  const name = auth.name;
-
+  const { setSearchQuery, setSearchResults, setIsSearching } = useSearch();
   const axiosPrivate = useAxiosPrivate();
+
+  // Debounced search function
+  const debouncedSearch = useCallback(
+    debounce(async (query) => {
+      if (!query.trim()) {
+        setSearchResults([]);
+        setIsSearching(false);
+        return;
+      }
+
+      try {
+        setIsSearching(true);
+        const response = await axiosPrivate.get(`/v1/products/search?query=${query}`);
+        setSearchResults(response.data.products);
+      } catch (error) {
+        console.error("Search error:", error);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500),
+    []
+  );
+
+  // Handle search input change
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchInput(value);
+    setSearchQuery(value);
+    debouncedSearch(value);
+  };
+
+  // Handle search form submission
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchInput.trim()) {
+      navigate('/shop');
+    }
+  };
 
   useEffect(() => {
     const fetchCartCount = async () => {
       try {
         const res = await axiosPrivate.get("/v1/cart/getcart");
-        console.log(res.data);
         const items = res.data.cart.cartItems || [];
-        const totalCount = items.reduce((sum, item) => sum + item.quantity, 0); // Count total quantity
+        const totalCount = items.reduce((sum, item) => sum + item.quantity, 0);
         setCartCount(totalCount);
-        console.log(totalCount);
       } catch (err) {
         console.error("Error fetching cart:", err);
       }
     };
 
     fetchCartCount();
-
-    // Listen to custom cart update event
     window.addEventListener("cartUpdated", fetchCartCount);
-
     return () => window.removeEventListener("cartUpdated", fetchCartCount);
   }, []);
 
@@ -72,19 +108,37 @@ const Navbar = () => {
 
           {/* Search Bar */}
           <div className="hidden md:flex flex-1 mx-6 max-w-xl">
-            <div className="flex w-full">
-              <input
-                type="text"
-                placeholder="Search products..."
-                className="flex-1 px-4 py-2 rounded-l-full border-t border-b border-l border-gray-300 focus:ring-2 focus:ring-green-400 outline-none"
-              />
+            <form onSubmit={handleSearchSubmit} className="flex w-full">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={handleSearchChange}
+                  placeholder="Search products..."
+                  className="w-full px-4 py-2 rounded-l-full border-t border-b border-l border-gray-300 focus:ring-2 focus:ring-green-400 outline-none"
+                />
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchInput("");
+                      setSearchQuery("");
+                      setSearchResults([]);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
               <button
                 type="submit"
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-r-full"
+                className="px-6 py-2 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-r-full flex items-center gap-2"
               >
-                Search
+                <Search size={20} />
+                <span className="hidden sm:inline">Search</span>
               </button>
-            </div>
+            </form>
           </div>
 
           {/* Account & Cart */}
@@ -138,17 +192,34 @@ const Navbar = () => {
       {/* Mobile Menu */}
       {isOpen && (
         <div className="md:hidden bg-white shadow-md">
-          <div className="flex flex-col items-center py-4">
-            {navLinks.map((link) => (
-              <Link
-                key={link.name}
-                to={link.path}
-                onClick={() => setIsOpen(false)}
-                className="py-2 text-gray-700 hover:text-green-600 font-medium"
+          <div className="p-4">
+            <form onSubmit={handleSearchSubmit} className="flex mb-4">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={handleSearchChange}
+                placeholder="Search products..."
+                className="flex-1 px-4 py-2 rounded-l-lg border border-gray-300 focus:ring-2 focus:ring-green-400 outline-none"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-green-500 text-white rounded-r-lg"
               >
-                {link.name}
-              </Link>
-            ))}
+                <Search size={20} />
+              </button>
+            </form>
+            <div className="flex flex-col items-center">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.name}
+                  to={link.path}
+                  onClick={() => setIsOpen(false)}
+                  className="py-2 text-gray-700 hover:text-green-600 font-medium"
+                >
+                  {link.name}
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
       )}

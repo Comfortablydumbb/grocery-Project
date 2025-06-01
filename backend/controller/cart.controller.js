@@ -21,6 +21,12 @@ exports.addToCart = async (req, res) => {
     const userId = extractUserId(req);
     const { productId } = req.body;
 
+    // Get product to check remaining units
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({ msg: "Product not found" });
+    }
+
     let cart = await Cart.findOne({ userId });
     if (!cart) {
       cart = new Cart({ userId, cartItems: [] });
@@ -31,6 +37,19 @@ exports.addToCart = async (req, res) => {
       cartId: cart._id,
       productId,
     });
+
+    // Calculate new quantity
+    const newQuantity = existingCartItem ? existingCartItem.quantity + 1 : 1;
+
+    // Check if adding would exceed available stock
+    if (newQuantity > product.remainingUnits) {
+      return res.status(400).json({ 
+        msg: `Cannot add more items. Only ${product.remainingUnits} units available in stock.`,
+        availableStock: product.remainingUnits,
+        currentCartQuantity: existingCartItem ? existingCartItem.quantity : 0
+      });
+    }
+
     if (!existingCartItem) {
       const cartItem = new CartItem({
         cartId: cart._id,
@@ -40,9 +59,17 @@ exports.addToCart = async (req, res) => {
       await cartItem.save();
       cart.cartItems.push(cartItem._id);
       await cart.save();
+    } else {
+      existingCartItem.quantity = newQuantity;
+      await existingCartItem.save();
     }
 
-    res.status(201).json({ msg: "Product added to cart", cart });
+    res.status(201).json({ 
+      msg: "Product added to cart", 
+      cart,
+      availableStock: product.remainingUnits,
+      currentCartQuantity: newQuantity
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ msg: "Internal server error" });
@@ -120,7 +147,7 @@ exports.getCart = async (req, res) => {
       path: "cartItems",
       populate: {
         path: "productId",
-        select: "productName price images totalQuantity",
+        select: "productName price images remainingUnits unit discount oldPrice"
       },
     });
 
@@ -136,9 +163,6 @@ exports.getCart = async (req, res) => {
 };
 
 exports.placeOrderFromCart = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     console.log("🛒 Placing order from cart...");
 
@@ -147,7 +171,9 @@ exports.placeOrderFromCart = async (req, res) => {
 
     // Validate required fields
     if (!address || !phoneNumber || !paymentMethod) {
-      return res.status(400).json({ error: "Missing required fields: address, phoneNumber, or paymentMethod" });
+      return res.status(400).json({ 
+        error: "Missing required fields: address, phoneNumber, or paymentMethod" 
+      });
     }
 
     if (!Array.isArray(selectedProducts) || selectedProducts.length === 0) {
@@ -163,37 +189,25 @@ exports.placeOrderFromCart = async (req, res) => {
     let orderItems = [];
     let totalAmount = 0;
 
-    // Validate products, check stock and update inventory
+    // Validate products and check stock
     for (let item of selectedProducts) {
       const { productId, quantity } = item;
-      const product = await Product.findById(productId).session(session);
+      const product = await Product.findById(productId);
       
       if (!product) {
-        await session.abortTransaction();
-        return res.status(400).json({ error: `Product with ID ${productId} not found` });
+        return res.status(400).json({ 
+          error: `Product with ID ${productId} not found` 
+        });
       }
 
       // Check if enough stock is available
       if (product.remainingUnits < quantity) {
-        await session.abortTransaction();
         return res.status(400).json({ 
           error: `Insufficient stock for product ${product.productName}. Available: ${product.remainingUnits}`
         });
       }
 
-      // Update product inventory
-      await Product.findByIdAndUpdate(
-        productId,
-        {
-          $inc: {
-            remainingUnits: -quantity,
-            soldUnits: quantity
-          }
-        },
-        { session }
-      );
-
-      const orderItem = new OrderItem({
+      const orderItem = await OrderItem.create({
         orderId: null,
         productId,
         quantity,
@@ -201,18 +215,27 @@ exports.placeOrderFromCart = async (req, res) => {
         totalPrice: quantity * product.price,
       });
 
-      await orderItem.save({ session });
+      // Update product inventory
+      await Product.findByIdAndUpdate(productId, {
+        $inc: {
+          remainingUnits: -quantity,
+          soldUnits: quantity
+        }
+      });
+
       orderItems.push(orderItem._id);
       totalAmount += orderItem.totalPrice;
     }
 
     // Validate payment method
     if (!["Cash", "QR"].includes(paymentMethod)) {
-      await session.abortTransaction();
-      return res.status(400).json({ error: "Invalid payment method. Must be 'Cash' or 'QR'" });
+      return res.status(400).json({ 
+        error: "Invalid payment method. Must be 'Cash' or 'QR'" 
+      });
     }
 
-    const order = new Order({
+    // Create order
+    const order = await Order.create({
       userId,
       orderItems,
       totalAmount,
@@ -223,47 +246,40 @@ exports.placeOrderFromCart = async (req, res) => {
       paymentStatus: paymentMethod === "Cash" ? "Pending" : "Paid",
     });
 
-    await order.save({ session });
-
     // Update orderItems with the order ID
     await OrderItem.updateMany(
       { _id: { $in: orderItems } },
-      { orderId: order._id },
-      { session }
+      { orderId: order._id }
     );
 
     // Remove ordered items from cart
     const orderedProductIds = selectedProducts.map((p) => p.productId);
-    await CartItem.deleteMany(
-      {
-        cartId: cart._id,
-        productId: { $in: orderedProductIds },
-      },
-      { session }
-    );
+    await CartItem.deleteMany({
+      cartId: cart._id,
+      productId: { $in: orderedProductIds }
+    });
 
-    await session.commitTransaction();
+    // Prepare response based on payment method
+    const response = {
+      message: paymentMethod === "Cash" 
+        ? "Order placed successfully. Pay in cash upon delivery."
+        : "Order placed successfully. Awaiting QR payment confirmation.",
+      orderId: order._id,
+      totalAmount
+    };
 
-    // Response based on payment method
-    if (paymentMethod === "Cash") {
-      return res.json({
-        message: "Order placed successfully. Pay in cash upon delivery.",
-        orderId: order._id,
-        totalAmount,
-      });
-    } else {
-      return res.json({
-        message: "Order placed successfully. Awaiting QR payment confirmation.",
-        orderId: order._id,
-        totalAmount,
-        instructions: `Please scan the QR code and send the payment of NPR ${totalAmount.toFixed(2)}. Add your email in the remarks for confirmation.`,
-      });
+    // Add QR specific instructions if needed
+    if (paymentMethod === "QR") {
+      response.instructions = `Please scan the QR code and send the payment of NPR ${totalAmount.toFixed(2)}. Add your email in the remarks for confirmation.`;
     }
+
+    return res.status(200).json(response);
+
   } catch (error) {
-    await session.abortTransaction();
     console.error("❌ Order Placement Error:", error);
-    return res.status(500).json({ error: "Order placement failed, please try again" });
-  } finally {
-    session.endSession();
+    return res.status(500).json({ 
+      error: "Order placement failed, please try again",
+      details: error.message 
+    });
   }
 };

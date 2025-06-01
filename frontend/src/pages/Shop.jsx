@@ -2,24 +2,35 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import ProductCard from "../component/ProductCard";
 import useAxiosPrivate from "../hooks/useAxiosPrivate";
-import {toast} from "react-hot-toast";
+import { toast } from "react-hot-toast";
+import { useSearch } from "../context/SearchProvider";
+import { Loader2 } from "lucide-react";
 
 export default function Shop() {
   const axiosPrivate = useAxiosPrivate();
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
-  const [selectedCategories, setSelectedCategories] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const { 
+    searchQuery, 
+    searchResults, 
+    isSearching,
+    selectedCategories,
+    setSelectedCategories 
+  } = useSearch();
 
   // Fetch all products with populated category
   const fetchProducts = async () => {
     try {
       const res = await axiosPrivate.get("/v1/products");
-      setProducts(res.data.products || []);
-      setFilteredProducts(res.data.products || []);
+      const allProducts = res.data.products || [];
+      setProducts(allProducts);
+      setFilteredProducts(allProducts);
     } catch (error) {
       console.error("Error fetching products:", error);
+      toast.error("Failed to load products");
     } finally {
       setLoading(false);
     }
@@ -32,6 +43,7 @@ export default function Shop() {
       setCategories(res.data || []);
     } catch (error) {
       console.error("Error fetching categories:", error);
+      toast.error("Failed to load categories");
     }
   };
 
@@ -40,35 +52,44 @@ export default function Shop() {
     fetchCategories();
   }, []);
 
+  // Apply filters (categories and search)
+  useEffect(() => {
+    let filtered = searchQuery ? searchResults : products;
+
+    if (selectedCategories.length > 0) {
+      filtered = filtered.filter((product) =>
+        selectedCategories.includes(product.category?.categoryName)
+      );
+    }
+
+    setFilteredProducts(filtered);
+  }, [searchQuery, searchResults, selectedCategories, products]);
+
   // Handle filter change
   const handleCategoryChange = (categoryName) => {
-    const updatedCategories = selectedCategories.includes(categoryName)
-      ? selectedCategories.filter((c) => c !== categoryName)
-      : [...selectedCategories, categoryName];
-
-    setSelectedCategories(updatedCategories);
-
-    if (updatedCategories.length === 0) {
-      setFilteredProducts(products);
+    if (searchQuery) {
+      // If there's a search query, clear it first
+      setSelectedCategories([categoryName]);
     } else {
-      const filtered = products.filter((product) =>
-        updatedCategories.includes(product.category?.categoryName)
-      );
-      setFilteredProducts(filtered);
+      const updatedCategories = selectedCategories.includes(categoryName)
+        ? selectedCategories.filter((c) => c !== categoryName)
+        : [...selectedCategories, categoryName];
+      setSelectedCategories(updatedCategories);
     }
   };
 
   const handleAddToCart = async (productId) => {
     try {
-      await axiosPrivate.post("/v1/cart/add", {
+      const response = await axiosPrivate.post("/v1/cart/add", {
         productId,
         quantity: 1,
       });
-      toast.success("Items added to cart",{position:"bottom-right"});
+      toast.success("Item added to cart");
       window.dispatchEvent(new Event("cartUpdated"));
     } catch (err) {
       console.error("Error adding to cart:", err);
-      toast.error("Failed to add to cart");
+      const errorMessage = err.response?.data?.msg || "Failed to add to cart";
+      toast.error(errorMessage);
     }
   };
 
@@ -101,9 +122,9 @@ export default function Shop() {
               Product Categories
             </h2>
             <ul className="space-y-4">
-              {categories.map((category, index) => (
+              {categories.map((category) => (
                 <li
-                  key={index}
+                  key={category._id}
                   className="flex items-center gap-2 cursor-pointer group"
                 >
                   <input
@@ -126,11 +147,26 @@ export default function Shop() {
           {/* Top bar */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
             <p className="text-gray-700 text-sm">
-              Showing {filteredProducts.length} result(s) from{" "}
-              {selectedCategories.length > 0
-                ? selectedCategories.length
-                : categories.length}{" "}
-              categorie(s)
+              {isSearching ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={16} />
+                  Searching...
+                </span>
+              ) : (
+                <>
+                  Showing {filteredProducts.length} result(s)
+                  {searchQuery && (
+                    <span className="ml-1">
+                      for "{searchQuery}"
+                    </span>
+                  )}
+                  {selectedCategories.length > 0 && (
+                    <span className="ml-1">
+                      in {selectedCategories.length} selected {selectedCategories.length === 1 ? 'category' : 'categories'}
+                    </span>
+                  )}
+                </>
+              )}
             </p>
           </div>
 
@@ -147,13 +183,21 @@ export default function Shop() {
             }}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
           >
-            {loading ? (
-              <p>Loading...</p>
+            {loading || isSearching ? (
+              <div className="col-span-full flex justify-center items-center py-12">
+                <Loader2 className="animate-spin" size={32} />
+              </div>
             ) : filteredProducts.length === 0 ? (
-              <p>No products found.</p>
+              <div className="col-span-full text-center py-12">
+                <p className="text-gray-500 text-lg">
+                  {searchQuery
+                    ? `No products found matching "${searchQuery}"`
+                    : "No products found in selected categories."}
+                </p>
+              </div>
             ) : (
-              filteredProducts.map((product, index) => (
-                <motion.div key={index} whileHover={{ scale: 1.03 }}>
+              filteredProducts.map((product) => (
+                <motion.div key={product._id} whileHover={{ scale: 1.03 }}>
                   <ProductCard
                     id={product._id}
                     image={`http://localhost:3001/public/${product.images?.[0]}`}
@@ -171,7 +215,6 @@ export default function Shop() {
           </motion.div>
         </div>
       </div>
-      
     </section>
   );
 }

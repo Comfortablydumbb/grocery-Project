@@ -51,19 +51,33 @@ const ProductDetails = () => {
         quantity: quantity,
       });
 
+      // Update product's remaining units and cart quantity info
       if (response.data.availableStock !== undefined) {
-        // Update product's remaining units in state
         setProduct(prev => ({
           ...prev,
           remainingUnits: response.data.availableStock
         }));
+        
+        // If we hit the stock limit, update quantity selector
+        if (response.data.currentCartQuantity >= response.data.availableStock) {
+          setQuantity(Math.min(quantity, response.data.availableStock));
+        }
       }
 
       toast.success("Added to cart successfully");
       window.dispatchEvent(new Event("cartUpdated"));
     } catch (error) {
       console.error("Error adding to cart:", error);
-      toast.error(error.response?.data?.message || "Failed to add to cart");
+      const errorMessage = error.response?.data?.msg || "Failed to add to cart";
+      toast.error(errorMessage);
+      
+      // Update available stock if provided in error response
+      if (error.response?.data?.availableStock !== undefined) {
+        setProduct(prev => ({
+          ...prev,
+          remainingUnits: error.response.data.availableStock
+        }));
+      }
     }
   };
 
@@ -192,7 +206,7 @@ const ProductDetails = () => {
                 )}
               </div>
 
-              <div className="flex items-center space-x-4">
+              {/* <div className="flex items-center space-x-4">
                 <label htmlFor="quantity" className="text-gray-700">
                   Quantity:
                 </label>
@@ -209,7 +223,7 @@ const ProductDetails = () => {
                     </option>
                   ))}
                 </select>
-              </div>
+              </div> */}
 
               <button
                 onClick={handleAddToCart}

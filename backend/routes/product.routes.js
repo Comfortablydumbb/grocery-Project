@@ -5,6 +5,7 @@ const {
   getProductById,
   updateProduct,
   deleteProduct,
+  searchProducts,
 } = require("../controller/product.controller");
 const isLoggedIn = require("../middleware/isloggedin");
 const isAdmin = require("../middleware/isadmin");
@@ -28,6 +29,7 @@ router.delete("/product/:id", isLoggedIn, isAdmin, deleteProduct);
 
 // Public routes:
 router.get("/products", getAllProducts);
+router.get("/products/search", searchProducts);
 router.get("/product/:id", getProductById);
 
 module.exports = router;

@@ -187,3 +187,33 @@ exports.deleteProduct = async (req, res) => {
       .json({ message: "Error deleting product", error: error.message });
   }
 };
+
+// Search products
+exports.searchProducts = async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query) {
+      return res.status(200).json({ products: [] });
+    }
+
+    // Create a case-insensitive regex pattern
+    const searchPattern = new RegExp(query, 'i');
+
+    // Search in product name and description
+    const products = await Product.find({
+      $or: [
+        { productName: searchPattern },
+        { description: searchPattern }
+      ]
+    }).populate('category');
+
+    res.status(200).json({ products });
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ 
+      message: "Error searching products", 
+      error: error.message 
+    });
+  }
+};

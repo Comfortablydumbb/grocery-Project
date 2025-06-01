@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import ProductCard from "../component/ProductCard";
 import useAxiosPrivate from "../hooks/useAxiosPrivate";
+import { toast } from "react-hot-toast";
 
 export default function FeaturedProducts() {
   const axiosPrivate = useAxiosPrivate();
@@ -28,15 +29,16 @@ export default function FeaturedProducts() {
 
   const handleAddToCart = async (productId) => {
     try {
-      await axiosPrivate.post("/v1/cart/add", {
+      const response = await axiosPrivate.post("/v1/cart/add", {
         productId,
         quantity: 1,
       });
+      toast.success("Item added to cart");
       window.dispatchEvent(new Event("cartUpdated"));
-      toast.success("Items added to cart");
     } catch (err) {
       console.error("Error adding to cart:", err);
-      toast.error("Failed to add to cart");
+      const errorMessage = err.response?.data?.msg || "Failed to add to cart";
+      toast.error(errorMessage);
     }
   };
 
@@ -62,7 +64,7 @@ export default function FeaturedProducts() {
           viewport={{ once: true }}
           className="text-gray-600 text-base md:text-lg mb-12"
         >
-          Hand-picked products you’ll love
+          Hand-picked products you'll love
         </motion.p>
 
         {/* Product Grid */}

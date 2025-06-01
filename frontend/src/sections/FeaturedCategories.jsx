@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import useAxiosPrivate from "../hooks/useAxiosPrivate";
 import bannerimage from "../assets/grocery.jpg";
 import { useNavigate } from "react-router-dom";
+import { useSearch } from "../context/SearchProvider";
 
 const banners = [
   {
@@ -32,11 +33,11 @@ export default function FeaturedCategories() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { setSelectedCategories, setSearchQuery, setSearchResults } = useSearch();
 
   const fetchCategories = async () => {
     try {
       const res = await axiosPrivate.get("/v1/categories");
-      console.log(res.data);
       const data = res.data || [];
       setCategories(data);
     } catch (error) {
@@ -49,6 +50,16 @@ export default function FeaturedCategories() {
   useEffect(() => {
     fetchCategories();
   }, []);
+
+  const handleCategoryClick = (category) => {
+    // Reset any existing search
+    setSearchQuery('');
+    setSearchResults([]);
+    // Set the selected category
+    setSelectedCategories([category.categoryName]);
+    // Navigate to shop page
+    navigate('/shop');
+  };
 
   return (
     <section className="py-16 px-4 md:px-6 lg:px-8 max-w-7xl mx-auto overflow-hidden">
@@ -80,7 +91,7 @@ export default function FeaturedCategories() {
           categories.map((cat) => (
             <motion.div
               key={cat._id}
-              onClick={() => navigate(`/shop?category=${cat._id}`)}
+              onClick={() => handleCategoryClick(cat)}
               variants={{
                 hidden: { opacity: 0, scale: 0.9 },
                 visible: { opacity: 1, scale: 1 },
@@ -126,7 +137,15 @@ export default function FeaturedCategories() {
               <h3 className="text-xl font-bold text-gray-800 mb-3">
                 {banner.title}
               </h3>
-              <button onClick={()=> navigate("/shop")} className="inline-flex items-center bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-5 py-2 rounded-full transition">
+              <button 
+                onClick={() => {
+                  setSelectedCategories([]);
+                  setSearchQuery('');
+                  setSearchResults([]);
+                  navigate("/shop");
+                }} 
+                className="inline-flex items-center bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-5 py-2 rounded-full transition"
+              >
                 Shop Now →
               </button>
             </div>
